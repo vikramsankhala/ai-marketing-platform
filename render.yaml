@@ -1,59 +1,10 @@
 services:
-  # Backend API
   - type: web
-    name: ai-marketing-backend
+    name: ai-marketing-platform
     env: node
     plan: free
-    buildCommand: cd backend && npm install && npm run build
-    startCommand: cd backend && npm start
+    buildCommand: npm install
+    startCommand: node app.js
     envVars:
       - key: NODE_ENV
         value: production
-      - key: PORT
-        value: 10000
-      - key: DATABASE_URL
-        fromDatabase:
-          name: ai-marketing-db
-          property: connectionString
-      - key: REDIS_URL
-        fromService:
-          type: redis
-          name: ai-marketing-redis
-          property: connectionString
-    healthCheckPath: /health
-
-  # Frontend
-  - type: web
-    name: ai-marketing-frontend
-    env: static
-    plan: free
-    buildCommand: cd frontend && npm install && npm run build
-    staticPublishPath: ./frontend/dist
-    envVars:
-      - key: REACT_APP_API_URL
-        value: https://ai-marketing-backend.onrender.com
-
-  # ML Content Generation Service
-  - type: web
-    name: ai-marketing-content-gen
-    env: python
-    plan: free
-    buildCommand: cd ml-services/content_generation && pip install -r requirements.txt
-    startCommand: cd ml-services/content_generation && python app.py
-    envVars:
-      - key: FLASK_ENV
-        value: production
-      - key: PORT
-        value: 10001
-      - key: OPENAI_API_KEY
-        sync: false
-
-databases:
-  - name: ai-marketing-db
-    plan: free
-    databaseName: ai_marketing
-    user: ai_marketing_user
-
-  - name: ai-marketing-redis
-    plan: free
-    type: redis
