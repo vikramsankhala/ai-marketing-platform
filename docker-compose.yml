@@ -1,0 +1,311 @@
+version: '3.8'
+
+services:
+  # Database Services
+  postgres:
+    image: postgres:15-alpine
+    container_name: ai-marketing-postgres
+    environment:
+      POSTGRES_DB: ai_marketing
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password123
+      POSTGRES_MULTIPLE_DATABASES: analytics,content,campaigns
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/migrations:/docker-entrypoint-initdb.d
+    networks:
+      - ai-marketing-network
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: ai-marketing-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - ai-marketing-network
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+
+  # Message Queue
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    container_name: ai-marketing-kafka
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+    ports:
+      - "9092:9092"
+    depends_on:
+      - zookeeper
+    networks:
+      - ai-marketing-network
+    restart: unless-stopped
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    container_name: ai-marketing-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    networks:
+      - ai-marketing-network
+    restart: unless-stopped
+
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: ai-marketing-backend
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://admin:password123@postgres:5432/ai_marketing
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: your-super-secret-jwt-key
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      PORT: 5000
+    ports:
+      - "5000:5000"
+    depends_on:
+      - postgres
+      - redis
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    networks:
+      - ai-marketing-network
+    restart: unless-stopped
+    command: npm run dev
+
+  # Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: ai-marketing-frontend
+    environment:
+      REACT_APP_API_URL: http://localhost:5000
+      REACT_APP_WS_URL: ws://localhost:5000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    networks:
+      - ai-marketing-network
+    restart: unless-stopped
+    command: npm start
+
+  # ML Services
+  content-generation:
+    build:
+      context: ./ml-services/content_generation
+      dockerfile: Dockerfile
+    container_name: ai-marketing-content-gen
+    environment:
+      FLASK_ENV: development
+      DATABASE_URL: postgresql://admin:password123@postgres:5432/ai_marketing
+      REDIS_URL: redis://redis:6379
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      PORT: 8000
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+      - redis
+    volumes:
+      - ./ml-services/content_generation:/app
+    networks:
+      - ai-marketing-network
+    restart: unless-stopped
+
+  predictive-analytics:
+    build:
+      context: ./ml-services/predictive_analytics
+      dockerfile: Dockerfile
+    container_name: ai-marketing-predictive
+    environment:
+      FLASK_ENV: development
+      DATABASE_URL: postgresql://admin:password123@postgres:5432/ai_marketing
+      REDIS_URL: redis://redis:6379
+      PORT: 8001
+    ports:
+      - "8001:8001"
+    depends_on:
+      - postgres
+      - redis
+    volumes:
+      - ./ml-services/predictive_analytics:/app
+    networks:
+      - ai-marketing-network
+    restart: unless-stopped
+
+  sentiment-analysis:
+    build:
+      context: ./ml-services/sentiment_analysis
+      dockerfile: Dockerfile
+    container_name: ai-marketing-sentiment
+    environment:
+      FLASK_ENV: development
+      DATABASE_URL: postgresql://admin:password123@postgres:5432/ai_marketing
+      REDIS_URL: redis://redis:6379
+      PORT: 8002
+    ports:
+      - "8002:8002"
+    depends_on:
+      - postgres
+      - redis
+    volumes:
+      - ./ml-services/sentiment_analysis:/app
+    networks:
+      - ai-marketing-network
+    restart: unless-stopped
+
+  chatbot-ai:
+    build:
+      context: ./ml-services/chatbot_ai
+      dockerfile: Dockerfile
+    container_name: ai-marketing-chatbot
+    environment:
+      FLASK_ENV: development
+      DATABASE_URL: postgresql://admin:password123@postgres:5432/ai_marketing
+      REDIS_URL: redis://redis:6379
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      PORT: 8003
+    ports:
+      - "8003:8003"
+    depends_on:
+      - postgres
+      - redis
+    volumes:
+      - ./ml-services/chatbot_ai:/app
+    networks:
+      - ai-marketing-network
+    restart: unless-stopped
+
+  dynamic-pricing:
+    build:
+      context: ./ml-services/dynamic_pricing
+      dockerfile: Dockerfile
+    container_name: ai-marketing-pricing
+    environment:
+      FLASK_ENV: development
+      DATABASE_URL: postgresql://admin:password123@postgres:5432/ai_marketing
+      REDIS_URL: redis://redis:6379
+      PORT: 8004
+    ports:
+      - "8004:8004"
+    depends_on:
+      - postgres
+      - redis
+    volumes:
+      - ./ml-services/dynamic_pricing:/app
+    networks:
+      - ai-marketing-network
+    restart: unless-stopped
+
+  # Monitoring & Observability
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: ai-marketing-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - ai-marketing-network
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: ai-marketing-grafana
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin123
+    ports:
+      - "3001:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+    depends_on:
+      - prometheus
+    networks:
+      - ai-marketing-network
+    restart: unless-stopped
+
+  # Elasticsearch for logging
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: ai-marketing-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    networks:
+      - ai-marketing-network
+    restart: unless-stopped
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.11.0
+    container_name: ai-marketing-kibana
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+    ports:
+      - "5601:5601"
+    depends_on:
+      - elasticsearch
+    networks:
+      - ai-marketing-network
+    restart: unless-stopped
+
+  # Nginx Load Balancer
+  nginx:
+    image: nginx:alpine
+    container_name: ai-marketing-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infrastructure/nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./infrastructure/nginx/ssl:/etc/nginx/ssl
+    depends_on:
+      - frontend
+      - backend
+    networks:
+      - ai-marketing-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:
+  elasticsearch_data:
+
+networks:
+  ai-marketing-network:
+    driver: bridge
