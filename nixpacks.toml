@@ -1,19 +1,16 @@
 [phases.setup]
-nixPkgs = ["nodejs", "python3", "pip"]
+nixPkgs = ["nodejs", "npm"]
 
 [phases.install]
 cmds = [
   "npm install",
-  "cd backend && npm install",
-  "cd frontend && npm install",
-  "cd ml-services/content_generation && pip install -r requirements.txt"
+  "cd backend && npm install"
 ]
 
 [phases.build]
 cmds = [
-  "cd frontend && npm run build",
-  "cd backend && npm run build"
+  "cd frontend && npm install && npm run build"
 ]
 
 [start]
-cmd = "npm run start"
+cmd = "node start.js"
